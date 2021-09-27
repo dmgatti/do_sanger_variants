@@ -8,7 +8,7 @@
 #SBATCH -e slurm.%N.%j.err # STDERR
 
 CONTAINER=~/containers/bioconductor.sif
-SCRIPT=/projects/compsci/dgatti/projects/snp_count/count_snps_in_genes.R
+SCRIPT=/projects/compsci/dgatti/projects/do_sanger_variants/count_snps_in_genes.R
 
 module load singularity
 

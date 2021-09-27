@@ -137,12 +137,16 @@ tally_vars_by_type = function(variants, var_table) {
     stopifnot(nchar(csq$gene_id) <= 18)
     
     # Gather results by gene. Not that some SNPs may be counted more than
-    # once because they have multiple consequences.    
-    csq = csq %>%
-            pivot_wider(names_from = consequence, values_from = n)
+    # once because they have multiple consequences.
+    if(ncol(var_table) == 1) {
+      var_table = full_join(var_table, csq, by = 'gene_id')
+    } else {
+      var_table = var_table %>%
+                    bind_rows(csq) %>%
+                    group_by(gene_id, consequence) %>%
+                    summarize(n = sum(n, na.rm = TRUE))
+    } # else
 
-    var_table = full_join(var_table, csq)
-    
     return(var_table)
 
 } # tally_vars_by_type()
@@ -246,7 +250,7 @@ main_fxn = function(chr) {
                                             type = 'cds')
 
     # Use the consequence column to count number of each type of variant.
-    snps_by_type   = tally_vars_by_type(snps,   snps_by_type) 
+    snps_by_type   = tally_vars_by_type(snps,   snps_by_type)
     indels_by_type = tally_vars_by_type(indels, indels_by_type)
 
     # Increment chunking.
@@ -267,9 +271,16 @@ main_fxn = function(chr) {
 
   indels_by_gene = full_join(genes, indels_by_gene)
   indels_by_cds  = full_join(genes, indels_by_cds)
-  
-  snps_by_type   = full_join(genes, snps_by_type)
-  indels_by_type = full_join(genes, indels_by_type)
+
+  # Reshape the by_type data.
+  snps_by_type   = full_join(genes, 
+                             snps_by_type %>%
+                               pivot_wider(names_from = consequence,
+                                           values_from = n))
+  indels_by_type = full_join(genes, 
+                             indels_by_type %>%
+                               pivot_wider(names_from = consequence,
+                                           values_from = n))
 
   # Save total SNPs/ indels on this chromosome.
   write(total_snps,   file = file.path(results_dir, paste0('total_snps_chr',   chr, '.txt')))
