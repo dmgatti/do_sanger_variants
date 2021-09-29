@@ -1,0 +1,323 @@
+---
+title: "Sanger Variants in Diversity Outbred Mice"
+author: "DMG"
+date: "9/23/2021"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(knitr)
+library(tidyverse)
+
+base_dir = '/Users/c-dgatti/Documents/projects/do_sanger_variants'
+```
+
+Using other scripts, I intersected the Ensembl genes with the [Sanger Mouse Genomes Project](https://www.sanger.ac.uk/data/mouse-genomes-project/) SNPs, indels, and structural variants to tally the total number of each, the number in each gene, and the number of each type of variant. I selected SNPs that passed the Sanger quality filter and had no missing data for any strain. This only includes data for chromosomes 1 - 19 and X. 
+
+Genome: GRCm38
+
+Ensembl: 97
+
+Sanger: version 7
+
+# Total Variants.
+
+```{r total_vars}
+total_snps   = read.csv(file.path(base_dir, 'total_snps.csv')) %>% 
+                 mutate(chr = factor(chr, levels = c(1:19, 'X'))) %>% 
+                 arrange(chr)
+total_indels = read.csv(file.path(base_dir, 'total_indels.csv')) %>% 
+                 mutate(chr = factor(chr, levels = c(1:19, 'X'))) %>% 
+                 arrange(chr)
+```
+
+There were a total of `r format(sum(total_snps$count), big.mark = ',', scientific = FALSE)` SNPs distributed across the chromosomes as follows.
+
+```{r total_snp_tbl}
+kable(total_snps, align = 'c', caption = 'Total SNPs by Chromosome')
+```
+
+```{r total_snp_plot}
+total_snps %>% 
+  ggplot(aes(chr, count)) +
+  geom_point() +
+  labs(title = 'Number of SNPs per Chromosome in CC/DO')
+```
+
+There were a total of `r format(sum(total_indels$count), big.mark = ',', scientific = FALSE)` Indels distributed across the chromosomes as follows.
+
+```{r total_indel_tbl}
+kable(total_indels, align = 'c', caption = 'Total Indels by Chromosome')
+```
+
+```{r total_indel_plot}
+total_indels %>% 
+  ggplot(aes(chr, count)) +
+  geom_point() +
+  labs(title = 'Number of Indels per Chromosome in CC/DO')
+```
+
+# Variants in Exons
+
+## SNPs in Exons
+
+I intersected the SNPs with any part of any exon, including the untranslated regions. I used anything defined as an 'exon' in the [Ensembl 97 database](https://support.bioconductor.org/p/122708/).
+
+```{r read_exon_snps}
+snps = readRDS(file.path(base_dir, 'snps_by_gene.rds'))
+snps = snps %>%
+         rename(chr = seqnames) %>% 
+         mutate(chr = factor(chr, levels = c(1:19, 'X')))
+total_biotypes = snps %>%
+                   count(gene_biotype)
+snps_by_biotype = snps %>%
+                    filter(num_variants > 0) %>%
+                    count(gene_biotype)
+snps_by_chr = snps %>%
+                filter(num_variants > 0) %>%
+                group_by(chr) %>% 
+                summarize(num_snps = sum(num_variants))
+genes_by_chr = snps %>%
+                filter(num_variants > 0) %>%
+                count(gene_id)
+```
+
+There were `r format(sum(snps_by_chr$num_snps), big.mark = ',', scientific = FALSE)` SNPs in the exons of `r format(nrow(genes_by_chr), big.mark = ',', scientific = FALSE)` genes. The number of SNPs on each  chromosome is shown in the table an plot below.
+
+```{r exon_snp_chr_tbl}
+kable(snps_by_chr, align = 'c', caption = 'SNPs in Exons')
+```
+
+There were `r nrow(snps)` features in this Ensembl build. `r filter(snps, num_variants > 0) %>% nrow()` features (`r format(filter(snps, num_variants > 0) %>% nrow() / nrow(snps) * 100, digits = 2)`%) contained SNPs in their exons.
+
+The SNPs break down by biotype as follows.
+
+```{r exon_snps_by_biotype}
+full_join(total_biotypes, snps_by_biotype, by = 'gene_biotype') %>% 
+  rename(total_genes     = n.x,
+         genes_with_snps = n.y) %>%
+  mutate(pct_with_snps   = genes_with_snps / total_genes * 100) %>% 
+  kable(digits = 2, align = 'c', caption = 'SNPs in Exons by Gene Biotype')
+```
+
+## Indels in Exons
+
+This intersects the variants with any part of any exon, including the untranslated regions.
+
+```{r read_exon_indels}
+indels = readRDS(file.path(base_dir, 'indels_by_gene.rds'))
+indels = indels %>%
+         rename(chr = seqnames) %>% 
+         mutate(chr = factor(chr, levels = c(1:19, 'X')))
+total_biotypes = indels %>%
+                  count(gene_biotype)
+indels_by_biotype = indels %>%
+                    filter(num_variants > 0) %>%
+                    count(gene_biotype)
+indels_by_chr = indels %>%
+                  filter(num_variants > 0) %>%
+                  group_by(chr) %>% 
+                  summarize(num_indels = sum(num_variants))
+genes_by_chr = snps %>%
+                 filter(num_variants > 0) %>%
+                 count(gene_id)
+```
+
+There were `r format(sum(indels_by_chr$num_indels), big.mark = ',', scientific = FALSE)` Indels in the exons of `r format(nrow(genes_by_chr), big.mark = ',', scientific = FALSE)` genes. The number of Indels on each  chromosome is shown in the table an plot below.
+
+```{r exon_indels_chr_tbl}
+kable(indels_by_chr, align = 'c', caption = 'Indels in Exons')
+```
+
+There were `r format(nrow(indels), big.mark = ',', scientific = FALSE)` features in this Ensembl build. `r filter(indels, num_variants > 0) %>% nrow()` features (`r filter(indels, num_variants > 0) %>% nrow() / nrow(indels) * 100`%) contained indels in their exons. 'Exon' is defined as Ensembl defines it in their annotation.
+
+The indels break down by biotype as follows.
+
+```{r exon_indels_by_biotype}
+full_join(total_biotypes, indels_by_biotype, by = 'gene_biotype') %>% 
+  rename(total_genes     = n.x,
+         genes_with_indels = n.y) %>%
+  mutate(pct_with_indels   = genes_with_indels / total_genes * 100) %>% 
+  kable(digits = 2, align = 'c', caption = 'Indels in Exons by Gene Biotype')
+```
+
+
+# Variants in Coding Sequences
+
+## SNPS in Coding Sequences
+
+This intersects the variants with any part of a CDS, as defined in the Ensembl data.
+
+```{r read_cds_snps}
+snps = readRDS(file.path(base_dir, 'snps_by_cds.rds'))
+snps = snps %>%
+         rename(chr = seqnames) %>% 
+         mutate(chr = factor(chr, levels = c(1:19, 'X')))
+total_biotypes = snps %>%
+                count(gene_biotype)
+snps_by_biotype = snps %>%
+                    filter(num_variants > 0) %>%
+                    count(gene_biotype)
+snps_by_chr = snps %>%
+                filter(num_variants > 0) %>%
+                group_by(chr) %>% 
+                summarize(count = sum(num_variants, na.rm = TRUE))
+```
+
+There were `r format(sum(snps$num_variants), big.mark = ',', scientific = FALSE)` SNPs in CDS, broken down by chromosome as follows:
+
+```{r cds_snp_chr_tbl}
+kable(snps_by_chr, align = 'c', caption = 'Number of SNPs in CDS per Chromosome')
+```
+
+There were `r format(nrow(snps), big.mark = ',', scientific = FALSE)` features in this Ensembl build. `r filter(snps, num_variants > 0) %>% nrow()` features (`r filter(snps, num_variants > 0) %>% nrow() / nrow(snps) * 100`%) contained SNPs in their CDS. 'CDS' is defined as Ensembl defines it in their annotation.
+
+The SNPs break down by biotype as follows.
+
+```{r cds_snps_by_biotype}
+full_join(total_biotypes, snps_by_biotype, by = 'gene_biotype') %>% 
+  rename(total_genes     = n.x,
+         genes_with_snps = n.y) %>%
+  mutate(pct_with_snps   = genes_with_snps / total_genes * 100) %>% 
+  kable(digits = 2, align = 'c', caption = 'SNPs in CDS by Gene Biotype')
+```
+
+## Indels in Coding Sequences
+
+This intersects the variants with any part of a CDS, as defined in the Ensembl data.
+
+```{r read_cds_indels}
+indels = readRDS(file.path(base_dir, 'indels_by_cds.rds'))
+indels = indels %>%
+           rename(chr = seqnames) %>% 
+           mutate(chr = factor(chr, levels = c(1:19, 'X')))
+total_biotypes = indels %>%
+                   count(gene_biotype)
+indels_by_biotype = indels %>%
+                      filter(num_variants > 0) %>%
+                      count(gene_biotype)
+indels_by_chr = indels %>%
+                  group_by(chr) %>% 
+                  summarize(count = sum(num_variants, na.rm = TRUE))
+```
+
+There were `r format(sum(indels$num_variants), big.mark = ',', scientific = FALSE)` Indels in CDS, broken down by chromosome as follows:
+
+```{r cds_indel_chr_tbl}
+kable(indels_by_chr, align = 'c', caption = 'Number of Indels in CDS per Chromosome')
+```
+
+There were `r format(nrow(indels), big.mark = ',', scientific = FALSE)` features in this Ensembl build. `r filter(indels, num_variants > 0) %>% nrow()` features (`r filter(indels, num_variants > 0) %>% nrow() / nrow(indels) * 100`%) contained Indels in their CDS. 'CDS' is defined as Ensembl defines it in their annotation.
+
+The indels break down by biotype as follows.
+
+```{r cds_indels_by_biotype}
+full_join(total_biotypes, indels_by_biotype, by = 'gene_biotype') %>% 
+  rename(total_genes     = n.x,
+         genes_with_indels = n.y) %>%
+  mutate(pct_with_indels   = genes_with_indels / total_genes * 100) %>% 
+  kable(digits = 2, align = 'c', caption = 'Indels in CDS by Gene Biotype')
+```
+
+
+# Variants by Consequence
+
+There are 21 different variant consequences in the Sanger files. The sum of the variant consequences of each type will be greater than the total number of variants because a single variant may have more than one consequence, and so will be double-counted. These values were derived from the 'consequence' part of the Sanger VCF and the totals differ from the numbers above.
+
+## SNPs by Consequence
+
+```{r snps_by_csq}
+snps = readRDS(file.path(base_dir, 'snps_by_type.rds'))
+```
+
+```{r snps_by_csq_tbl}
+genes_by_type = snps %>% 
+                 select(-(seqnames:gene_biotype)) %>% 
+                 pivot_longer(cols = -gene_id, names_to = 'consequence', values_to = 'count') %>% 
+                 drop_na() %>%
+                 count(consequence) %>% 
+                 rename(num_genes = n)
+
+csq_tbl = snps %>%
+            pivot_longer(cols = intergenic_variant:incomplete_terminal_codon_variant, 
+                         names_to = 'consequence', values_to = 'count') %>% 
+            group_by(consequence) %>% 
+            summarize(num_snps = sum(count, na.rm = TRUE)) %>% 
+            full_join(genes_by_type, by = 'consequence') %>% 
+            filter(consequence != 'NA')
+
+kable(csq_tbl, digits = 2, align = 'c', caption = 'Number of SNPs and Genes by Consequence')
+```
+
+As expected, most of the SNPs fall outside of coding regions. There are `r filter(csq_tbl, consequence == 'missense_variant') %>% pull(num_snps)` missense variants in `r filter(csq_tbl, consequence == 'missense_variant') %>% pull(num_genes)` genes.
+
+```{r snps_by_type_num_genes}
+gene_ct = snps %>% 
+            select(gene_id, gene_biotype, `3_prime_UTR_variant`, `5_prime_UTR_variant`, missense_variant,
+                   synonymous_variant, coding_sequence_variant, starts_with('start'), starts_with('stop')) %>%
+            filter(gene_biotype == 'protein_coding') %>%
+            pivot_longer(cols = `3_prime_UTR_variant`:stop_retained_variant, 
+                         names_to = 'type', values_to = 'count') %>%
+            group_by(gene_id) %>%
+            summarize(num_snps = sum(count, na.rm = TRUE)) %>%
+            filter(num_snps > 0)
+```
+
+
+The total number of protein-coding genes with SNPs in exons (by summing 3_prime_UTR_variant, 5_prime_UTR_variant, missense_variant, synonymous_variant, coding_sequence_variant) was `r format(nrow(gene_ct), big.mark = ',', scientific = FALSE)`. This is close to the value found above derived by intersecting exons with SNPs.
+
+## Indels by Consequence
+
+```{r indels_by_csq}
+indels = readRDS(file.path(base_dir, 'indels_by_type.rds'))
+```
+
+```{r indels_by_csq_tbl}
+genes_by_type = indels %>% 
+                 select(-(seqnames:gene_biotype)) %>% 
+                 pivot_longer(cols = -gene_id, names_to = 'consequence', values_to = 'count') %>% 
+                 drop_na() %>%
+                 count(consequence) %>% 
+                 rename(num_genes = n)
+
+csq_tbl = indels %>%
+            pivot_longer(cols = intergenic_variant:incomplete_terminal_codon_variant, 
+                         names_to = 'consequence', values_to = 'count') %>% 
+            group_by(consequence) %>% 
+            summarize(num_indels = sum(count, na.rm = TRUE)) %>% 
+            full_join(genes_by_type, by = 'consequence') %>% 
+            filter(consequence != 'NA')
+
+kable(csq_tbl, digits = 2, align = 'c', caption = 'Number of Indels and Genes by Consequence')
+```
+
+As expected, most of the Indexs fall outside of coding regions. Sanger doesn't have 'missense_variants' for indels, but they do have several types of frameshift variants. There are `r filter(csq_tbl, str_detect(consequence, 'frame')) %>% summarize(num_indels = sum(num_indels)) %>% pull(num_indels)` coding variants in `r filter(csq_tbl, str_detect(consequence, 'frame')) %>% summarize(num_genes = sum(num_genes)) %>% pull(num_genes)` genes.
+
+```{r indels_by_type_num_genes}
+gene_ct = indels %>% 
+            select(gene_id, gene_biotype, `3_prime_UTR_variant`, `5_prime_UTR_variant`,
+                   coding_sequence_variant, starts_with('start'), starts_with('stop'),
+                   contains('frame'), protein_altering_variant) %>%
+            filter(gene_biotype == 'protein_coding') %>%
+            pivot_longer(cols = `3_prime_UTR_variant`:stop_retained_variant, 
+                         names_to = 'type', values_to = 'count') %>%
+            group_by(gene_id) %>%
+            summarize(num_snps = sum(count, na.rm = TRUE)) %>%
+            filter(num_snps > 0)
+```
+
+
+The total number of protein-coding genes with Indels in exons (by summing 3_prime_UTR_variant, 5_prime_UTR_variant, coding_sequence_variant, framshift, start & stop variants) was `r format(nrow(gene_ct), big.mark = ',', scientific = FALSE)`. This is close to the value found above derived by intersecting exons with Indels.
+
+# Session Info
+
+```{r sessioninfo}
+sessionInfo()
+```
+
