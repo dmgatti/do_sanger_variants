@@ -19,7 +19,7 @@ library(VariantAnnotation)
 
 ### VARIABLES ###
 
-results_dir    = '/projects/compsci/dgatti/projects/snp_count'
+results_dir    = '/projects/compsci/dgatti/projects/do_sanger_variants'
 
 sanger_dir = '/projects/omics_share/temp_reorg/Mouse/Sanger/REL_2004'
 sanger_file = file.path(sanger_dir, 'mgp_REL2005_snps_indels.vcf.gz')
@@ -137,12 +137,16 @@ tally_vars_by_type = function(variants, var_table) {
     stopifnot(nchar(csq$gene_id) <= 18)
     
     # Gather results by gene. Not that some SNPs may be counted more than
-    # once because they have multiple consequences.    
-    csq = csq %>%
-            pivot_wider(names_from = consequence, values_from = n)
+    # once because they have multiple consequences.
+    if(ncol(var_table) == 1) {
+      var_table = full_join(var_table, csq, by = 'gene_id')
+    } else {
+      var_table = var_table %>%
+                    bind_rows(csq) %>%
+                    group_by(gene_id, consequence) %>%
+                    summarize(n = sum(n, na.rm = TRUE))
+    } # else
 
-    var_table = full_join(var_table, csq)
-    
     return(var_table)
 
 } # tally_vars_by_type()
@@ -194,10 +198,12 @@ main_fxn = function(chr) {
   snps_by_gene = data.frame(gene_id = current_ensid, num_variants = 0)
   snps_by_cds  = data.frame(gene_id = current_ensid, num_variants = 0)
   snps_by_type = data.frame(gene_id = current_ensid)
+  total_snps = 0
 
   indels_by_gene = data.frame(gene_id = current_ensid, num_variants = 0)
   indels_by_cds  = data.frame(gene_id = current_ensid, num_variants = 0)
   indels_by_type = data.frame(gene_id = current_ensid)
+  total_indels = 0
 
   # Set up chunks (chromosome range to query).
   chunk = 0
@@ -227,7 +233,11 @@ main_fxn = function(chr) {
     # Filter to keep high quality, polymorphic variants.
     snps   = filter_variants(snps)
     indels = filter_variants(indels)
-
+    
+    # Tally total SNPs & indels.
+    total_snps   = total_snps   + nrow(snps)
+    total_indels = total_indels + nrow(indels)
+    
     # Perform a raw intersection of the SNPs & indels with exons & CDSs.
     current_gr = GRanges(chr, IRanges(start, end))
     snps_by_gene   = intersect_var_with_genes(snps,   snps_by_gene,   ensembl, current_gr,
@@ -240,7 +250,7 @@ main_fxn = function(chr) {
                                             type = 'cds')
 
     # Use the consequence column to count number of each type of variant.
-    snps_by_type   = tally_vars_by_type(snps,   snps_by_type) 
+    snps_by_type   = tally_vars_by_type(snps,   snps_by_type)
     indels_by_type = tally_vars_by_type(indels, indels_by_type)
 
     # Increment chunking.
@@ -261,6 +271,20 @@ main_fxn = function(chr) {
 
   indels_by_gene = full_join(genes, indels_by_gene)
   indels_by_cds  = full_join(genes, indels_by_cds)
+
+  # Reshape the by_type data.
+  snps_by_type   = full_join(genes, 
+                             snps_by_type %>%
+                               pivot_wider(names_from = consequence,
+                                           values_from = n))
+  indels_by_type = full_join(genes, 
+                             indels_by_type %>%
+                               pivot_wider(names_from = consequence,
+                                           values_from = n))
+
+  # Save total SNPs/ indels on this chromosome.
+  write(total_snps,   file = file.path(results_dir, paste0('total_snps_chr',   chr, '.txt')))
+  write(total_indels, file = file.path(results_dir, paste0('total_indels_chr', chr, '.txt')))
 
   saveRDS(snps_by_gene, file = file.path(results_dir, 
                         paste0('snps_by_gene_chr', chr, '.rds')))
@@ -306,3 +330,25 @@ for(i in 1:nrow(df)) {
   saveRDS(sbg, file = file.path(results_dir, df$outfile[i]))
 } # for(i)
 
+# Gather total SNPs & indels.
+files = dir(results_dir, pattern = 'total_snps_chr',   full.names = TRUE)
+total = sapply(files, scan)
+names(total) = gsub(paste0('^', results_dir, '/total_snps_chr|\\.txt$'), '', names(total))
+total = data.frame(chr = names(total), count = total)
+write.csv(total, file = file.path(results_dir, 'total_snps.csv'), 
+          quote = FALSE, row.names = FALSE)
+
+files = dir(results_dir, pattern = 'total_indels_chr',   full.names = TRUE)
+total = sapply(files, scan)
+names(total) = gsub(paste0('^', results_dir, '/total_indels_chr|\\.txt$'), '', names(total))
+total = data.frame(chr = names(total), count = total)
+write.csv(total, file = file.path(results_dir, 'total_indels.csv'), 
+          quote = FALSE, row.names = FALSE)
+
+# Remove intermediate files.
+for(i in 1:nrow(df)) {
+  files = dir(results_dir, pattern = df$pattern[i], full.names = TRUE)  
+  file.remove(files)
+} # for(i)
+file.remove(dir(results_dir, pattern = 'total_snps_chr',   full.names = TRUE))
+file.remove(dir(results_dir, pattern = 'total_indels_chr', full.names = TRUE))
